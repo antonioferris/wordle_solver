@@ -11,7 +11,7 @@ import time
 import random
 import numpy as np
 import itertools
-from wordle import FastWordle
+from wordle import HardWordle
 
 
 # ONE TIME FILE CREATION
@@ -167,7 +167,7 @@ def interactive(preloaded_input):
     word_dict = np.array(word_dict)
     guess_dict = np.array(guess_dict)
     words = np.array(range(len(word_dict)))
-    w = FastWordle(M, word_dict, guess_dict, results_dict)
+    w = HardWordle(M, word_dict, guess_dict, results_dict)
     guess_words = np.array(w.guess_order)
 
     while len(words) > 1:
@@ -189,7 +189,7 @@ def interactive(preloaded_input):
         guess_words = guess_words[np.where(M[g, guess_words] == result)[0]]
         print("Remaining words", word_dict[words], "Guess words", guess_dict[guess_words])
 
-def eval(solution_tree, verbose=False):
+def eval(solution_tree, true_words=None, verbose=False):
     """
         Given a solution tree for a given set of words, evaluates it on the word_dict. This will be a dictionary
         from observation -> guess.
@@ -210,23 +210,34 @@ def eval(solution_tree, verbose=False):
     tree = {}
     guess_score = 0
 
-    true_words = range(n)
+    w = HardWordle(M, word_dict, guess_dict, results_dict)
+
+    if true_words == None:
+        true_words = range(n)
+    else:
+        true_words = [word_dict.index(w) for w in true_words]
+
+
+    solution_tree[tuple([])] = solution_tree[()], 0
+
     for true_word in true_words:
-        tw_str = word_dict[true_word]
-        words = np.array(range(n))
+        tw_str = word_dict[true_word] # get the string repr of the truw word
+        words = np.array(range(n)) # initialize the remaining words and guesses to start at all of them
         guess_words = np.array(range(m))
         hist = []
 
-        solution_tree[tuple([])] = solution_tree[None], 0
-
-        while len(words) > 0:
+        while len(words) > 0: # while we still have words left to choose from
             guess_score += 1
             h = tuple(hist)
 
-            if h in solution_tree:
+            if h in solution_tree: # input precomputed guesses from the tree.
                 guess, _ = solution_tree[h]
             else:
-                guess = words[0]
+                s = time.time()
+                guess = w.solve_cost(words, guess_words, alpha=9999, d=len(h) // 2)[0]
+                dur = time.time() - s
+                if dur > 1:
+                    print(f"Needed 1 second for non-precomputed {len(words)} words")
 
             hist.append(guess)
             guess_str = guess_dict[guess]
@@ -250,30 +261,29 @@ def eval(solution_tree, verbose=False):
 
     print(f"Average number of guesses {guess_score / len(true_words)}")
 
-def solve(guesses):
+def solve(guesses, save=True):
     M, word_dict, guess_dict, results_dict = load_M()
     guesses = [guess_dict.index(guess) for guess in guesses]
     word_dict = np.array(word_dict)
     guess_dict = np.array(guess_dict)
     words = np.array(range(len(word_dict)))
-    w = FastWordle(M, word_dict, guess_dict, results_dict, global_guess_list=guesses)
+    w = HardWordle(M, word_dict, guess_dict, results_dict, global_guess_list=guesses)
     guess_words = np.array(w.guess_order)
 
     solution_tree = w.solve(words, guess_words, verbose=True, timeout=3600 * 5)
     print()
     print("Solution Tree:", solution_tree)
 
-    if solution_tree:
-        with open("solutions.p", "wb") as f:
+    if save and solution_tree:
+        with open("solutions.pckl", "wb") as f:
             pickle.dump(solution_tree, f)
 
 def main():
     # make_M()
     # interactive(preloaded_input=[])
-    # solve(["RAISE"])
-    # solve(["STEAM"])
-    solution_tree = pickle.load(open("solutions.p", "rb"))
-    eval(solution_tree, verbose=False)
+    # solve(["RAISE"], save=False)
+    solution_tree = pickle.load(open("solutions.pckl", "rb"))
+    eval(solution_tree, true_words=['ALOFT'], verbose=True)
 
 
 

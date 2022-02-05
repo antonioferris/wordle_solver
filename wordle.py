@@ -23,17 +23,38 @@ import numpy as np
 import time
 
 
-class FastWordle:
+class HardWordle:
+    """
+        This class contains a solver for Hard mode wordle.
+        This means that every new guess must use the results
+        of your previous guesses. i.e. It must be a valid word
+        given your previous guesses.
+    """
     def __init__(self, M, word_dict, guess_dict, results_dict, global_guess_list=None):
+        """
+        Initialize the HardWordle, pretty self explanatory.
+        Given a global_guess_list, this class will try to solve only those guesses.
+
+        Recommended usage is either have global_guest_list as default and call solve with verbose=False
+        and come back a couple days later,
+
+        or give global_guest_list as your personal favorite guesses for hard mode and call solve
+        with verbose=True to see which one is best.
+
+        Args:
+            M (numpy array): A large, precomputed array of the result of any possible word as a guess with any other word.
+            word_dict (list[str]): the dictionary, also the de-indexing key for all of the word indices being used in this class
+            guess_dict (list[str]): the allowed guesses, also the de-indexing key for all of the guest indices used.
+            results_dict (list[str]): the possible results, also the de-indexing key for all possible results
+            global_guess_list (list[int], optional): the guesses to try as an initial guess. Defaults to None.
+        """
         self.n = M.shape[0]
         self.m = 2315
         self.M = M
-        self.len_cnts = defaultdict(int)
-        self.len_csts = defaultdict(int)
         self.word_dict = np.array(word_dict)
         self.guess_dict = guess_dict
         self.results_dict = results_dict
-        self.global_guess_list = global_guess_list
+        self.global_guess_list = global_guess_list # the guesses this Wordle will try as first guesses
         self.hist = [] # history of guesses and results.
         self.tree = {} # decision tree - actual solution to the game!!
 
@@ -51,32 +72,33 @@ class FastWordle:
         self.cap = 10000
         self.cache = {}
 
-    def _solve(self, words, guess_words, verbose=False, timeout=600):
-        wt = tuple(words)
-        if wt not in self.cache: # possible bug different guesses for words with different guess arrays.
-            self.cache[wt] = self._solve(words, guess_words, verbose, timeout)
-        return self.cache[wt]
-
-
-    def solve(self, words, guess_words, verbose=False, timeout=600):
+    def solve(self, words, guess_words, verbose=False):
         """
-            Given a list of words, calls solve_cost to find the
-            guess with the minimum cost.
+        Recursively solves the Wordle problem given a dictionary
+        and an allowed guess list.
+
+        Args:
+            words (list[int]): list of word indexes of dictionary (index into self.word_dict)
+            guess_words (list[int]): list of word indexes of allowed guesses (index into self.guess_dict)
+            verbose (bool, optional): Give more verbose output to command line. Defaults to False.
+
+        Returns:
+            solution_tree (dict): The solution tree gives the correct first guess and second guess
+            for every possible result. This isn't the full solution, but is enough such that the full solution
+            can be computed very quickly.
+            The solution_tree is structured as a dictionary from a history tuple to a (guess, cost) tuple giving
+            the optimal guess and the optimal cost obtained from that state.
+            solution_tree[()]  = (initial_guess, total_cost) gives the best initial guess and the best cost obtained from the solve function.
+            solution_tree[(initial_guess, r)] = (second_guess, seond_cost) gives the optimal second guess after obtaining result r.
         """
-        min_cost = 4 * len(words)
+        min_cost = 4 * len(words) # we know that we can do better than 4 guesses on average.
         guess = None
-        self.start = time.time()
-        if verbose:
-            print(f"initial min cost {min_cost}, {len(words)}")
 
         # for tracking progress
         w = len(words)
 
         for g in self.global_guess_list: # guess words in our guess list
             self.hist.append(g) # add guess to history
-            if time.time() - self.start > timeout:
-                print(f"Time limit exceeded. {time.time() - self.start}s taken.")
-                break
             cost = len(words) # need 1 guess for every current word.
             results = self.M[g, words]
             guess_results = self.M[g, guess_words]
@@ -86,6 +108,7 @@ class FastWordle:
             # search the easier results first.
             unique_results, counts = np.unique(results, return_counts=True)
             unique_results = unique_results[np.argsort(counts)]
+
             for result in unique_results: # for each unique result
                 if result == 0:
                     continue # result of 0 means we guessed it! No additional cost.
@@ -98,18 +121,19 @@ class FastWordle:
 
                 w -= len(new_words)
 
-                next_guess, inc = self.cache_cost(new_words, new_guess_words, alpha, 1)
+                next_guess, inc = self.solve_cost(new_words, new_guess_words, alpha, 1)
                 self.tree[tuple(self.hist)] = next_guess, inc
-                if inc == alpha:
-                    print(f"Failed to solve ({self.guess_dict[g]}, {self.results_dict[result]}) giving {self.word_dict[new_words]} in {5} guesses.")
+                if verbose and inc >= alpha: # if we failed, let's print what we failed on.
+                    print(f"Failed to solve ({self.guess_dict[g]}, {self.results_dict[result]}) giving {len(new_words)} words in {5} guesses.")
                 cost += inc
 
                 self.hist.pop() # remove result from history after consideration
-                if verbose:
-                    d = time.time() - s
+                d = time.time() - s
+                if verbose and d > 3:
                     print(f"Result {r} / {t} ({len(new_words)} words) has cost {inc} (cumulative {cost}) took {d:.2f}s {w} words left to explore.")
                     r += 1
-                if cost >= min_cost:
+
+                if cost >= min_cost: # break early if this guess is not good enough.
                     break
 
             if cost < min_cost: # update min_cost and guess if we are minimal
@@ -121,40 +145,32 @@ class FastWordle:
             self.hist.pop() # remove guess from hstory after consideration
 
         guess_word = (self.guess_dict[guess], min_cost)
-        if verbose:
+        if verbose and guess:
             print(f"FINAL GUESS {guess_word} cost {min_cost}")
 
         # we return the tree of the solved game, made from the tree as we went.
         # the only part of the tree we need is the branches that start with the "correct" guess.
         solution_tree = {hist : sol for hist, sol in self.tree.items() if hist[0] == guess}
-        solution_tree[tuple([])] = guess
-        print("WORD LEN COSTS:")
-        print({j : self.len_csts[j] / self.len_cnts[j] for j in self.len_cnts.keys()})
+        solution_tree[tuple([])] = (guess, min_cost)
         return solution_tree
-
-    def cache_cost(self, words, guess_words, alpha, d):
-        # hist = tuple(self.hist)
-        # if len(hist) % 2 != 0:
-        #     raise ValueError(f"Uneven History! {hist}")
-        # if hist not in self.cache: # possible bug different guesses for words with different guess arrays.
-        s = time.time()
-        TEMP_R = self.solve_cost(words, guess_words, alpha, d)
-
-        dt = time.time() - s
-        if dt > 20:
-            print(f"Cost call with {len(words)} words,  {len(guess_words)} guess words, {alpha} alpha took {dt:.2f} seconds")
-
-        # self.len_cnts[len(words)] += 1
-        # self.len_csts[len(words)] += self.cache[hist][1]
-        return TEMP_R # return min cost
 
     def solve_cost(self, words, guess_words, alpha, d):
         """
-            Given the list of words as a list of indices and our depth,
-            solve_cost recursively computes the cost function.
-            alpha : the minimum cost that isn't useful for this function
+        The recursive workhorse of the solve function, solve_cost
+        recursively computes the best guess to give in any situation
+        and returns that best guess along with the minimum cost obtained.
+
+        Args:
+            words (list[int]): list of word indices
+            guess_words (list[int]): list of guess indices
+            alpha (int): the maximal "useful" cost, used for alpha pruning
+            d (int): depth of the search
+
+        Returns:
+            tuple(guess, min_cost)): tuple of the optimal guess and the cost it achieves on the words given.
         """
         n = len(words)
+
         if d > 5: # if we exceeded maximal recursive depth
             return None, 10000
 
@@ -167,6 +183,7 @@ class FastWordle:
         min_cost = alpha # any cost great than alpha is useless.
         min_guess = None
         guess_words = np.sort(guess_words)
+
         for g in guess_words: # for each guess index,
             cost = n
             results = self.M[g, words]
@@ -181,20 +198,17 @@ class FastWordle:
             if min_possible_cost >= min_cost: # no use exploring this guess
                 continue
 
-            # if we are passed guesses that are words, (we ALWAYS guess our actual words before other words.)
+            # if we are passed guesses that are words, (we ALWAYS guess our actual words before other words)
             if g not in words:
                 # if none of the words work as a guess themselves, any guess that with score 2 * n is optimal
                 if min_cost == 2 * n:
                     return min_guess, min_cost
-
 
                 # skip truly useless guesses
                 if max(counts) == n:
                     continue
 
             # we now consider actually recurring on this guess.
-
-            # self.hist.append(g) # add guess to history
 
             # search the easier results first.
             unique_results = unique_results[np.argsort(counts)]
@@ -204,18 +218,13 @@ class FastWordle:
                     break
                 if result == 0:
                     continue # result of 0 means we guessed it! No additional cost.
-                # self.hist.append(result) # add result to history
                 # recusively compute on the new words, guess_words available to us.
 
                 new_alpha = min_cost - cost # any cost greater than or equal to this is useless to us.
                 new_words = words[np.where(results == result)[0]] # get the new set of possible words and guesses
                 new_guess_words = guess_words[np.where(guess_results == result)[0]]
                 alpha = min_cost - cost # if the cost of this call is greater than min_cost - cost, this whole guess isn't going to be used.
-                cost += self.cache_cost(new_words, new_guess_words, new_alpha, d + 1)[1]
-
-                # self.hist.pop() # remove result after consideration
-
-            # self.hist.pop() # remove guess from history
+                cost += self.solve_cost(new_words, new_guess_words, new_alpha, d + 1)[1]
 
             if cost < min_cost: # update min_cost if a better guess was found.
                 min_guess = g
