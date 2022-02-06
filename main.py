@@ -11,7 +11,7 @@ import time
 import random
 import numpy as np
 import itertools
-from wordle import HardWordle
+from hardwordle import HardWordle
 
 
 # ONE TIME FILE CREATION
@@ -33,14 +33,7 @@ def make_M():
 
     # define this function for getting results in terms of results_dict indices
     def get_results_idx(guess, word):
-        res = []
-        for i in range(len(guess)):
-            if guess[i] == word[i]:
-                res.append("G")
-            elif guess[i] in word:
-                res.append("Y")
-            else:
-                res.append("_")
+        res = get_results(guess, word)
         return results_dict.index(tuple(res))
 
     for i in range(n):
@@ -103,52 +96,6 @@ def get_results(guess, word):
             res.append("_")
     return tuple(res)
 
-def get_buckets(guess, poss_words):
-    """
-        given a guess, return a dictionary
-    """
-    buckets = defaultdict(list)
-    for word in poss_words:
-        if guess == word:
-            continue
-        res = get_results(guess, word)
-        buckets[res].append(word)
-
-    return buckets
-
-def solve(guesser, poss_words, true_word, verbose=True):
-    true_word = true_word.upper()
-    if verbose:
-        print(f'GUESSING FOR {true_word}')
-    for i in range(6):
-        g = guesser(poss_words)
-        results = get_results(g, true_word)
-        buckets = get_buckets(g, poss_words)
-        if verbose:
-            print(f"{g} -> {results}")
-        if results in buckets:
-            poss_words = buckets[results]
-            if verbose:
-                if len(poss_words) > 20:
-                    print(f"{len(poss_words)} words remain.")
-                else:
-                    print(f"words that remain {poss_words}")
-        else:
-            # did we already get it?
-            if g == true_word:
-                r = i + 1
-            else:
-                r = i + 2
-            if verbose:
-                print(f"It took me {r} guesses!")
-            break
-        if i == 5:
-            print(f'We failed still have {poss_words} left after guess {g}.')
-            r = None
-    if verbose:
-        print()
-    return r
-
 ### ------------------------------------------------------ ###
 ### ------------------------------------------------------ ###
 ### ------------------------------------------------------ ###
@@ -203,6 +150,8 @@ def eval(solution_tree, true_words=None, verbose=False):
         }
         Would mean a strategy of guessing MATCH first. If the observated response is 3, guess "GUEST" next.
         Otherwise, guess "FREED". and so on.
+
+        true_words is a list of words to evaluate on, if desired.
     """
     M, word_dict, guess_dict, results_dict = load_M()
     n = len(word_dict)
@@ -283,7 +232,7 @@ def main():
     # interactive(preloaded_input=[])
     # solve(["RAISE"], save=False)
     solution_tree = pickle.load(open("solutions.pckl", "rb"))
-    eval(solution_tree, true_words=['ALOFT'], verbose=True)
+    eval(solution_tree, true_words=None, verbose=False)
 
 
 

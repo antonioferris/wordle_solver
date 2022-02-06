@@ -1,9 +1,9 @@
 """
-    This file contains FastWordle, an implementation of a Wordle
+    This file contains HardWordle, an implementation of a hard mode Wordle
     solver that tries to use numpy matrices to allow for greater efficiency
     when searching the wordle problem space.
 
-    Most of the benefit of FastWordle comes from storing precomputed data in a specific form.
+    Most of the benefit of HardWordle comes from storing precomputed data in a specific form.
 
     The matrix M is a large array for each pair of possible guess and possible word in the dictionary.
     Each element in the array is the index of the result that guess gives when the true word is that word.
@@ -16,12 +16,11 @@
 
     Suppose that poss_words is a list of the indexes of possible words, and guess is the index of a possible guess.
     Then, M[guess, poss_words] is an array of the results each possible word gives for our guess!!
-    Also, M[guess, poss_words] == res is an array of the indices of the words that could still be the word after our guess!
+    Also, np.where(M[guess, poss_words] == res) is an array of the indices of the words that could still be the word after our guess!
 """
 from collections import defaultdict
 import numpy as np
 import time
-
 
 class HardWordle:
     """
