@@ -1,3 +1,4 @@
 # ignore pickled files, results of computation that shouldn't be on github.
 *.pckl
+*.jld2
 __pycache__/
